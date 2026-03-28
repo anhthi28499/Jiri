@@ -5,11 +5,13 @@ Jiri is a **separate** service from [Jannus](../Jannus) (the coding/fix agent). 
 ## Features
 
 - **GitHub webhooks** — `push`, `pull_request`, `workflow_run`, `issue_comment` (with keywords), etc.
-- **Clone/pull** repos under `workspaces/` (same idea as Jannus).
+- **Multi-project support** — each project has a `projects/{id}/project.yaml` config that tells Jiri which repos to pull and where to file issues. Pass `project_id` in any trigger payload.
+- **Clone/pull all repos** — when `project_id` is set, Jiri pulls every repo in the project config before analyzing; always uses the latest code.
+- **GitHub Actions trigger** — `.github/workflows/ui-test-trigger.yml` lets any CI pipeline notify Jiri when a UI test fails (via `repository_dispatch` or direct HTTP POST).
 - **Test runner** — auto-detects `pytest`, `npm test`, `make test`, `go test`, `cargo test`, or `TEST_COMMANDS`.
 - **Optional UI smoke tests** — Playwright (`UI_TEST_ENABLED=true`).
-- **Analyzer** — OpenAI-based triage (or heuristics without `OPENAI_API_KEY`).
-- **GitHub reporter** — creates issues or comments with trigger phrases for Jannus.
+- **Analyzer** — OpenAI-based triage (or heuristics without `OPENAI_API_KEY`); injects per-project `architecture_notes` and `AGENTS.md` into the LLM prompt.
+- **GitHub reporter** — creates issues or comments with trigger phrases for Jannus; routes to the project’s `issue_repo` when configured.
 - **Negotiation** — synchronous HTTP to Jannus `POST /api/fix-request` and `POST /api/negotiate`.
 - **Escalation** — Telegram via **Jiri’s bot**; when negotiation assigns `escalation_sender: jannus`, Jiri skips its bot and you should rely on Jannus notifications (or extend Jannus to mirror the message).
 
@@ -48,6 +50,7 @@ See `.env.example` for the full list. Important ones:
 | `WEBHOOK_SECRET` | GitHub webhook HMAC secret |
 | `GITHUB_TOKEN` | PAT for creating issues/comments |
 | `GITHUB_DEFAULT_REPO` | Fallback `owner/repo` when payload has no repository |
+| `PROJECTS_DIR` | Directory containing per-project configs (default `./projects`) |
 | `JANNUS_API_URL` | Base URL of Jannus (e.g. `http://jannus-vps:8765`) |
 | `JANNUS_API_SECRET` | Sent as `X-Jiri-Secret` to Jannus; must match Jannus `JIRI_PEER_SECRET` |
 | `JIRI_INBOUND_SECRET` | If set, incoming `POST /api/test-request` and `POST /api/negotiate` require `X-Jiri-Secret` |
@@ -60,8 +63,8 @@ See `.env.example` for the full list. Important ones:
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Liveness |
-| `POST /webhook` | GitHub webhooks (HMAC) |
-| `POST /api/test-request` | Jannus (or automation) asks Jiri to test a repo (`repo_full_name`, `repo_clone_url`, optional `thread_id`) |
+| `POST /webhook` | GitHub webhooks (HMAC) — accepts `repository_dispatch` with `client_payload.project_id` |
+| `POST /api/test-request` | Direct trigger: `repo_full_name`, `repo_clone_url` required; optional `project_id`, `trigger_type`, `test_name`, `description`, `screenshot_url`, `environment` |
 | `POST /api/negotiate` | Inbound from Jannus (async/observability; logs payload; optional `JIRI_INBOUND_SECRET`) |
 | `POST /callback` | Human-in-the-loop resume (LangGraph `Command(resume=...)`) |
 
@@ -87,11 +90,34 @@ Jannus (on another VPS) should set:
 
 ```
 Jiri/
-├── jiri/              # Python package
-│   ├── agents/        # LangGraph nodes
-│   ├── trigger/       # FastAPI app
-│   └── github/        # PyGithub helpers
-├── workspaces/        # Clones + checkpoints (gitignored contents)
+├── jiri/                  # Python package
+│   ├── agents/            # LangGraph nodes (planner, repo_manager, analyzer, reporter, …)
+│   ├── projects/          # Project config loader (loader.py)
+│   ├── trigger/           # FastAPI app + security
+│   └── github/            # PyGithub helpers
+├── projects/              # Per-project configuration
+│   ├── acme-k8s/          # Sample: K8s / GitOps project
+│   │   ├── project.yaml   # Repos, deploy strategy, issue_repo, architecture notes
+│   │   └── AGENTS.md      # Diagnostic guide injected into LLM prompts
+│   └── acme-compose/      # Sample: Docker Compose project
+│       ├── project.yaml
+│       └── AGENTS.md
+├── samples/               # Reference directory structures (static stubs, not real code)
+│   ├── acme-k8s/          # frontend/, backend-api/, k8s-manifests/
+│   └── acme-compose/      # app/ (monorepo), infra/
+├── .github/
+│   └── workflows/
+│       └── ui-test-trigger.yml  # Reusable workflow: UI test failure → Jiri
+├── workspaces/            # Clones + checkpoints (gitignored contents)
+├── docs/trigger.md        # Full trigger protocol documentation
 ├── requirements.txt
 └── .env.example
 ```
+
+## Adding a new project
+
+1. Create `projects/<id>/project.yaml` — list repos, deploy strategy, `issue_repo`.
+2. Create `projects/<id>/AGENTS.md` — describe architecture and diagnosis steps.
+3. Send a trigger with `project_id: <id>` in the payload.
+
+See `docs/trigger.md` for the full payload protocol and GitHub Actions integration guide.
