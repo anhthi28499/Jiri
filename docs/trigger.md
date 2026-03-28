@@ -1,0 +1,1 @@
+thiết lập queue để lỡ jiri bị crash thì job vẫn không biến mất

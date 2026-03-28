@@ -7,3 +7,4 @@ workspaces/*
 .jiri_ui/
 *.sqlite
 *.db
+.gitnexus
