@@ -28,7 +28,11 @@ def report(settings: Settings, state: JiriState) -> dict[str, Any]:
 
     token = settings.github_token
     payload = state.get("payload") or {}
-    repo = gh.get_repo_full_name(payload, settings.github_default_repo)
+    project_config = state.get("project_config")
+    if project_config and project_config.issue_repo:
+        repo = project_config.issue_repo
+    else:
+        repo = gh.get_repo_full_name(payload, settings.github_default_repo)
     summary = state.get("analysis_summary") or state.get("planner_summary") or "Test failure"
 
     if not token:

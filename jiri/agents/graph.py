@@ -12,7 +12,7 @@ from jiri.agents.analyzer import analyze
 from jiri.agents.negotiator import negotiate
 from jiri.agents.notifier import notify_escalation
 from jiri.agents.planner import plan
-from jiri.agents.repo_manager import ensure_repo
+from jiri.agents.repo_manager import ensure_all_repos
 from jiri.agents.reporter import report, report_from_negotiation
 from jiri.agents.state import JiriState
 from jiri.agents.test_runner import run_tests
@@ -39,7 +39,7 @@ def _planner_node(state: JiriState) -> dict[str, Any]:
 
 def _repo_node(state: JiriState) -> dict[str, Any]:
     settings = get_settings()
-    return ensure_repo(settings, state)
+    return ensure_all_repos(settings, state)
 
 
 def _route_after_repo(state: JiriState) -> str:

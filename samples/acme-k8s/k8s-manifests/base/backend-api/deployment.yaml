@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-api
+  namespace: acme
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend-api
+  template:
+    metadata:
+      labels:
+        app: backend-api
+    spec:
+      containers:
+        - name: backend-api
+          image: ghcr.io/acme-org/backend-api:main  # CI bot updates this tag
+          ports:
+            - containerPort: 3001
+          envFrom:
+            - configMapRef:
+                name: backend-api-config
+            - secretRef:
+                name: backend-api-secrets

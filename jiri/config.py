@@ -10,6 +10,10 @@ def _default_workspaces_dir() -> Path:
     return Path(__file__).resolve().parent.parent / "workspaces"
 
 
+def _default_projects_dir() -> Path:
+    return Path(__file__).resolve().parent.parent / "projects"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -20,6 +24,10 @@ class Settings(BaseSettings):
     workspaces_dir: Path = Field(
         default_factory=_default_workspaces_dir,
         description="Directory for persistent git clones and checkpoints.",
+    )
+    projects_dir: Path = Field(
+        default_factory=_default_projects_dir,
+        description="Directory containing per-project config subdirectories.",
     )
     webhook_secret: str = Field(
         default="",

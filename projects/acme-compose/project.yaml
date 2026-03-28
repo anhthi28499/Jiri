@@ -1,0 +1,55 @@
+project_id: acme-compose
+name: "Acme App (Docker Compose)"
+description: |
+  Single-host application deployed with Docker Compose.
+  Monorepo containing React frontend and FastAPI backend.
+  A separate infra repo holds Compose files and Nginx config.
+
+deploy_strategy: docker-compose
+
+repos:
+  - full_name: acme-org/app
+    clone_url: https://github.com/acme-org/app.git
+    role: monorepo
+    branch: main
+
+  - full_name: acme-org/infra
+    clone_url: https://github.com/acme-org/infra.git
+    role: infra-config
+    branch: main
+
+# GitHub issues for this project are filed here
+issue_repo: acme-org/app
+
+environments:
+  staging:
+    url: https://staging.acme-compose.example.com
+  production:
+    url: https://acme-compose.example.com
+
+architecture_notes: |
+  Deployment pipeline:
+    1. Developer pushes to acme-org/app.
+    2. GitHub Actions builds Docker images for frontend (Node build → Nginx) and backend (Python).
+    3. Images are pushed to GHCR with the commit SHA as tag.
+    4. Deployment: SSH into server, update image tags in infra/.env, run
+       `docker compose -f docker-compose.prod.yml pull && docker compose up -d`.
+
+  Service layout (from infra/docker-compose.prod.yml):
+    - nginx      → :80/:443, reverse-proxies /* and /api/*
+    - frontend   → :3000 (React SPA, served by Nginx container)
+    - backend    → :8000 (FastAPI/uvicorn)
+    - db         → :5432 (PostgreSQL)
+
+  Nginx routing (infra/nginx/nginx.conf):
+    - /api/ → http://backend:8000/
+    - /     → http://frontend:3000/
+
+  Key files to check on a UI test failure:
+    - app/frontend/src/components/CheckoutForm.tsx
+    - app/frontend/src/api/client.ts
+    - app/backend/routers/orders.py, app/backend/routers/auth.py
+    - app/backend/models/schemas.py (Pydantic request/response models)
+    - infra/nginx/nginx.conf (proxy config)
+    - infra/docker-compose.prod.yml (image tags, port mappings, env vars)
+    - infra/.env.example (required env vars)

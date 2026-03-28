@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: frontend
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/acme-org/k8s-manifests.git
+    targetRevision: main
+    path: base/frontend
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: acme
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

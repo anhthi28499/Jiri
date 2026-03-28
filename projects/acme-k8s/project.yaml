@@ -1,0 +1,52 @@
+project_id: acme-k8s
+name: "Acme Platform (Kubernetes / GitOps)"
+description: |
+  Production e-commerce platform deployed on Kubernetes via ArgoCD.
+  React SPA frontend, Node.js REST API backend, infrastructure managed
+  as code in a dedicated k8s-manifests repo.
+
+deploy_strategy: gitops-k8s
+
+repos:
+  - full_name: acme-org/frontend
+    clone_url: https://github.com/acme-org/frontend.git
+    role: frontend
+    branch: main
+
+  - full_name: acme-org/backend-api
+    clone_url: https://github.com/acme-org/backend-api.git
+    role: backend-api
+    branch: main
+
+  - full_name: acme-org/k8s-manifests
+    clone_url: https://github.com/acme-org/k8s-manifests.git
+    role: gitops-config
+    branch: main
+
+# GitHub issues for this project are filed here
+issue_repo: acme-org/frontend
+
+environments:
+  staging:
+    url: https://staging.acme.example.com
+  production:
+    url: https://acme.example.com
+
+architecture_notes: |
+  Deployment pipeline:
+    1. Developer pushes to frontend or backend-api.
+    2. GitHub Actions builds a Docker image and pushes to GHCR.
+    3. CI bot commits the new image tag to k8s-manifests/base/{service}/deployment.yaml.
+    4. ArgoCD detects the manifest change and syncs the Deployment to the cluster.
+
+  Service communication:
+    - frontend (React SPA, Nginx in K8s) proxies /api/v1/* → backend-api Service.
+    - backend-api (Node.js/Express) owns the REST contract.
+    - Auth: JWT issued by POST /api/v1/auth/login, verified as Bearer token on every request.
+
+  Key files to check on a UI test failure:
+    - frontend/src/pages/Checkout.tsx, frontend/src/api/client.ts
+    - backend-api/src/routes/orders.ts, backend-api/src/middleware/auth.ts
+    - k8s-manifests/base/frontend/deployment.yaml (image tag, env vars)
+    - k8s-manifests/base/backend-api/configmap.yaml (API_BASE_URL)
+    - k8s-manifests/overlays/staging/kustomization.yaml

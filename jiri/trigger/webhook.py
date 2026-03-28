@@ -166,6 +166,10 @@ async def test_request(request: Request, background_tasks: BackgroundTasks) -> R
         payload["issue"] = {"number": int(body["issue_number"])}
     if body.get("pull_request") is not None:
         payload["pull_request"] = body["pull_request"]
+    # Multi-project support: forward project context fields into payload
+    for _field in ("project_id", "trigger_type", "test_name", "description", "screenshot_url", "environment"):
+        if body.get(_field):
+            payload[_field] = str(body[_field])
 
     background_tasks.add_task(_run_graph_job, "jiri_test_request", payload, thread_id)
     return Response(

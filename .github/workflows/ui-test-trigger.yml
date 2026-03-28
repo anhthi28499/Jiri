@@ -1,0 +1,169 @@
+name: Trigger Jiri — UI Test Failure Analysis
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Usage
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Manual dispatch (this repo):
+#      gh workflow run ui-test-trigger.yml \
+#        -f project_id=acme-k8s \
+#        -f test_name=checkout-flow \
+#        -f description="Checkout button unresponsive" \
+#        -f environment=staging
+#
+# 2. Called from another repo's workflow:
+#      jobs:
+#        notify-jiri:
+#          uses: YOUR-ORG/jiri/.github/workflows/ui-test-trigger.yml@main
+#          with:
+#            project_id: acme-k8s
+#            test_name: ${{ steps.run-tests.outputs.failed_test }}
+#            description: ${{ steps.run-tests.outputs.error_message }}
+#            screenshot_url: ${{ steps.screenshot.outputs.url }}
+#            environment: staging
+#          secrets: inherit
+#
+# Required secrets (set in this repo's Settings → Secrets):
+#   JIRI_DISPATCH_TOKEN  — GitHub PAT with `repo` scope (to send repository_dispatch)
+#   JIRI_INBOUND_SECRET  — Optional; must match JIRI_INBOUND_SECRET on the Jiri server
+#
+# Optional repository variable (Settings → Variables):
+#   JIRI_URL             — Base URL of Jiri server, e.g. https://jiri.example.com
+#                          When set, the workflow also POSTs directly to Jiri as a fallback.
+# ─────────────────────────────────────────────────────────────────────────────
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_id:
+        description: "Jiri project ID (must match a directory under projects/)"
+        required: true
+        type: string
+      test_name:
+        description: "Name of the failing test or test suite"
+        required: true
+        type: string
+      description:
+        description: "Human-readable description of the failure"
+        required: false
+        type: string
+        default: ""
+      screenshot_url:
+        description: "URL to failure screenshot (optional)"
+        required: false
+        type: string
+        default: ""
+      environment:
+        description: "Environment where the test failed (e.g. staging, production)"
+        required: false
+        type: string
+        default: "staging"
+
+  # Allow other workflows to call this one
+  workflow_call:
+    inputs:
+      project_id:
+        required: true
+        type: string
+      test_name:
+        required: true
+        type: string
+      description:
+        required: false
+        type: string
+        default: ""
+      screenshot_url:
+        required: false
+        type: string
+        default: ""
+      environment:
+        required: false
+        type: string
+        default: "staging"
+    secrets:
+      JIRI_DISPATCH_TOKEN:
+        required: true
+      JIRI_INBOUND_SECRET:
+        required: false
+
+jobs:
+  trigger-jiri:
+    name: Send trigger to Jiri
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Primary path: repository_dispatch ──────────────────────────────────
+      # GitHub delivers this as X-GitHub-Event: repository_dispatch to Jiri's
+      # /webhook endpoint (HMAC verified by Jiri). Jiri reads client_payload.
+      - name: Send repository_dispatch to Jiri repo
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.JIRI_DISPATCH_TOKEN }}
+          # Sends to THIS repo — Jiri must have its GitHub webhook pointed here.
+          # To send to a different repo (e.g. the Jiri deployment repo), change:
+          #   repository: your-org/jiri-deployment
+          repository: ${{ github.repository }}
+          event-type: jiri-ui-test-failure
+          client-payload: |
+            {
+              "project_id": "${{ inputs.project_id }}",
+              "trigger_type": "ui_test_failure",
+              "test_name": "${{ inputs.test_name }}",
+              "description": "${{ inputs.description }}",
+              "screenshot_url": "${{ inputs.screenshot_url }}",
+              "environment": "${{ inputs.environment }}",
+              "triggered_by": "github-actions",
+              "run_id": "${{ github.run_id }}",
+              "run_url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            }
+
+      # ── Fallback path: direct HTTP POST to Jiri ────────────────────────────
+      # Used when Jiri is exposed over HTTP/HTTPS (e.g. in a private network or
+      # cloud VM). Set the JIRI_URL repository variable to enable this step.
+      - name: POST directly to Jiri server (fallback)
+        if: vars.JIRI_URL != ''
+        env:
+          JIRI_URL: ${{ vars.JIRI_URL }}
+          JIRI_SECRET: ${{ secrets.JIRI_INBOUND_SECRET }}
+        run: |
+          REPO_FULL="${{ github.repository }}"
+          REPO_CLONE="https://github.com/${REPO_FULL}.git"
+
+          HTTP_CODE=$(curl \
+            --fail \
+            --silent \
+            --show-error \
+            --request POST \
+            --url "${JIRI_URL}/api/test-request" \
+            --header "Content-Type: application/json" \
+            --header "X-Jiri-Secret: ${JIRI_SECRET}" \
+            --data "$(jq -n \
+              --arg project_id   "${{ inputs.project_id }}" \
+              --arg repo_full    "${REPO_FULL}" \
+              --arg repo_clone   "${REPO_CLONE}" \
+              --arg trigger_type "ui_test_failure" \
+              --arg test_name    "${{ inputs.test_name }}" \
+              --arg description  "${{ inputs.description }}" \
+              --arg screenshot   "${{ inputs.screenshot_url }}" \
+              --arg environment  "${{ inputs.environment }}" \
+              --arg triggered_by "github-actions-direct" \
+              --arg run_id       "${{ github.run_id }}" \
+              '{
+                project_id:    $project_id,
+                repo_full_name: $repo_full,
+                repo_clone_url: $repo_clone,
+                trigger_type:  $trigger_type,
+                test_name:     $test_name,
+                description:   $description,
+                screenshot_url: $screenshot,
+                environment:   $environment,
+                triggered_by:  $triggered_by,
+                run_id:        $run_id
+              }'
+            )" \
+            --output /dev/null \
+            --write-out "%{http_code}")
+
+          echo "Jiri responded with HTTP ${HTTP_CODE}"
+          if [[ "${HTTP_CODE}" != "202" && "${HTTP_CODE}" != "200" ]]; then
+            echo "::warning::Jiri direct POST returned unexpected status ${HTTP_CODE}"
+          fi

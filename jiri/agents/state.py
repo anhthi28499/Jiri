@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, TypedDict
+
+if TYPE_CHECKING:
+    from jiri.projects.loader import ProjectConfig
 
 
 class JiriState(TypedDict, total=False):
@@ -41,3 +44,8 @@ class JiriState(TypedDict, total=False):
     human_response: str | None
     error: str
     skip_graph: bool
+
+    # Multi-project support
+    project_id: str                     # set from trigger payload when present
+    project_config: "ProjectConfig | None"  # loaded by planner; None = single-repo mode
+    additional_repo_paths: list[str]    # local paths of secondary repos from project_config

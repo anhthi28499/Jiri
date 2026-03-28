@@ -81,8 +81,44 @@ def plan(settings: Settings, state: JiriState) -> dict[str, Any]:
         return {}
     if settings.openai_api_key:
         try:
-            return _llm_plan(settings, state)
+            base = _llm_plan(settings, state)
         except Exception as e:
             logger.exception("Planner LLM failed: %s", e)
-            return _heuristic_plan(state)
-    return _heuristic_plan(state)
+            base = _heuristic_plan(state)
+    else:
+        base = _heuristic_plan(state)
+
+    # Multi-project support: load project config when project_id is present in payload
+    payload = state.get("payload") or {}
+    client_payload = payload.get("client_payload") or {}
+    project_id = (
+        str(client_payload.get("project_id") or "").strip()
+        or str(payload.get("project_id") or "").strip()
+    )
+
+    project_config = None
+    if project_id:
+        try:
+            from jiri.projects.loader import load_project
+
+            project_config = load_project(settings.projects_dir, project_id)
+            logger.info(
+                "Loaded project config: %s (%d repos, issue_repo=%s)",
+                project_id,
+                len(project_config.repos),
+                project_config.issue_repo or "(none)",
+            )
+            # Override primary repo with first entry from project config
+            if project_config.repos:
+                base["repo_full_name"] = project_config.repos[0].full_name
+                base["repo_clone_url"] = project_config.repos[0].clone_url
+        except FileNotFoundError:
+            logger.warning(
+                "project_id=%r not found in %s; continuing in single-repo mode",
+                project_id,
+                settings.projects_dir,
+            )
+        except Exception as e:
+            logger.exception("Failed to load project config %r: %s", project_id, e)
+
+    return {**base, "project_id": project_id, "project_config": project_config}
