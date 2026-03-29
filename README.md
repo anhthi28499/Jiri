@@ -121,3 +121,4 @@ Jiri/
 3. Send a trigger with `project_id: <id>` in the payload.
 
 See `docs/trigger.md` for the full payload protocol and GitHub Actions integration guide.
+See `docs/setup.md` for the complete setup and configuration guide.

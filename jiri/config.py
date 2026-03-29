@@ -95,6 +95,11 @@ class Settings(BaseSettings):
     jiri_telegram_bot_token: str = Field(default="", description="Telegram bot token for Jiri notifications.")
     jiri_telegram_chat_id: str = Field(default="", description="Telegram chat id for Jiri.")
 
+    issue_triage_enabled: bool = Field(
+        default=True,
+        description="If true, Jiri posts a comment on new issues that are missing required information.",
+    )
+
     langchain_tracing_v2: bool = Field(default=False)
     langchain_api_key: str = Field(default="")
     langchain_project: str = Field(default="jiri")

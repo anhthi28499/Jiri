@@ -9,6 +9,7 @@ from typing import Any
 from langgraph.graph import END, START, StateGraph
 
 from jiri.agents.analyzer import analyze
+from jiri.agents.issue_triager import triage_issue
 from jiri.agents.negotiator import negotiate
 from jiri.agents.notifier import notify_escalation
 from jiri.agents.planner import plan
@@ -29,6 +30,17 @@ def _apply_langsmith_env(settings: Settings) -> None:
         os.environ["LANGCHAIN_API_KEY"] = settings.langchain_api_key
     os.environ["LANGCHAIN_PROJECT"] = settings.langchain_project
     os.environ["LANGCHAIN_TRACING_V2"] = "true" if settings.langchain_tracing_v2 else "false"
+
+
+def _issue_triager_node(state: JiriState) -> dict[str, Any]:
+    settings = get_settings()
+    return triage_issue(settings, state)
+
+
+def _route_after_triager(state: JiriState) -> str:
+    if state.get("skip_graph"):
+        return END
+    return "planner"
 
 
 def _planner_node(state: JiriState) -> dict[str, Any]:
@@ -129,6 +141,7 @@ def _build_graph() -> Any:
         checkpointer = MemorySaver()
 
     g = StateGraph(JiriState)
+    g.add_node("issue_triager", _issue_triager_node)
     g.add_node("planner", _planner_node)
     g.add_node("repo_manager", _repo_node)
     g.add_node("test_runner", _test_runner_node)
@@ -139,7 +152,8 @@ def _build_graph() -> Any:
     g.add_node("negotiator", _negotiator_node)
     g.add_node("notifier", _notifier_node)
 
-    g.add_edge(START, "planner")
+    g.add_edge(START, "issue_triager")
+    g.add_conditional_edges("issue_triager", _route_after_triager, {"planner": "planner", END: END})
     g.add_edge("planner", "repo_manager")
     g.add_conditional_edges("repo_manager", _route_after_repo)
     g.add_edge("test_runner", "ui_tester")
